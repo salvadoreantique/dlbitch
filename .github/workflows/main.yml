@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       urls:
-        description: '🔗 Links (one per line or space separated)'
+        description: '🔗 Paste your links (one per line or space separated)'
         required: true
         type: string
 
@@ -26,20 +26,19 @@ jobs:
           git config user.email "github-actions@github.com"
 
       - name: Install Tools
-        run: sudo apt-get update && sudo apt-get install -y aria2 zip curl
+        run: sudo apt-get update && sudo apt-get install -y aria2 curl
 
       - name: Download Files
         run: |
-          echo "🚀 Starting Download - No Key Required"
+          echo "🚀 Starting Download..."
           mkdir -p downloads tmp_downloads
           cd tmp_downloads
 
-          # Better handling of multiple URLs
           echo "${{ github.event.inputs.urls }}" | tr ' ' '\n' | while read -r url; do
             if [ -n "$url" ]; then
               echo "📥 Downloading: $url"
               aria2c --max-connection-per-server=16 --split=16 --min-split-size=1M --continue=true "$url" || \
-              curl -L -O -C - "$url" || echo "❌ Failed: $url"
+              curl -L -O -C - "$url" || echo "Failed: $url"
             fi
           done
 
@@ -48,10 +47,11 @@ jobs:
 
       - name: Commit & Push
         run: |
-          git add downloads/ -f
-          if git commit -m "⬇️ New download [skip ci]"; then
-            git push
-            echo "✅ Successfully pushed!"
+          git add -f downloads/
+          if git diff --staged --quiet; then
+            echo "No new files downloaded"
           else
-            echo "No new files to commit"
+            git commit -m "⬇️ Downloaded new files [skip ci]"
+            git push
+            echo "✅ Successfully committed and pushed!"
           fi
