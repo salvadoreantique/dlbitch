@@ -1,23 +1,29 @@
-name: ⬇️ 01- Down load URL
+name: ⬇️ Download URL
 
 on:
   workflow_dispatch:
     inputs:
       urls:
-        description: '🔗 Paste your links (one per line or space separated)'
+        description: 'Paste links here (one per line)'
         required: true
         type: string
 
 jobs:
   download:
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 120
     permissions:
       contents: write
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+
+      - name: Fix SSL Certificates
+        run: |
+          echo "🔧 Updating CA certificates..."
+          sudo apt-get update
+          sudo apt-get install -y ca-certificates curl aria2
+          sudo update-ca-certificates --fresh
 
       - name: Git Config
         run: |
@@ -25,33 +31,27 @@ jobs:
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
 
-      - name: Install Tools
-        run: sudo apt-get update && sudo apt-get install -y aria2 curl
-
       - name: Download Files
         run: |
           echo "🚀 Starting Download..."
-          mkdir -p downloads tmp_downloads
-          cd tmp_downloads
+          mkdir -p downloads
+          cd downloads
 
-          echo "${{ github.event.inputs.urls }}" | tr ' ' '\n' | while read -r url; do
+          echo "${{ github.event.inputs.urls }}" | while IFS= read -r url; do
             if [ -n "$url" ]; then
               echo "📥 Downloading: $url"
-              aria2c --max-connection-per-server=16 --split=16 --min-split-size=1M --continue=true "$url" || \
-              curl -L -O -C - "$url" || echo "Failed: $url"
+              aria2c --max-connection-per-server=8 --split=8 --min-split-size=1M --continue=true --check-certificate=false "$url" || \
+              curl -L -O -C - --insecure "$url" || echo "❌ Failed: $url"
             fi
           done
-
-          mv * ../downloads/ 2>/dev/null || true
-          cd ..
 
       - name: Commit & Push
         run: |
           git add -f downloads/
           if git diff --staged --quiet; then
-            echo "No new files downloaded"
+            echo "No new files"
           else
             git commit -m "⬇️ Downloaded new files [skip ci]"
             git push
-            echo "✅ Successfully committed and pushed!"
+            echo "✅ Successfully pushed!"
           fi
