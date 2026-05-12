@@ -4,11 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       urls:
-        description: '🔗 لینک های دانلود (با فاصله جدا کنید)'
+        description: '🔗 Links (space separated)'
         required: true
         type: string
       mode:
-        description: '📦 حالت دانلود'
+        description: '📦 Mode'
         required: false
         default: 'normal'
         type: choice
@@ -16,15 +16,15 @@ on:
           - normal
           - zip
       password:
-        description: '🔒 رمز عبور برای فایل زیپ (اختیاری)'
+        description: '🔒 Password for ZIP (optional)'
         required: false
         default: ''
         type: string
 
 jobs:
-  save-file:
+  download:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 180
     permissions:
       contents: write
 
@@ -33,48 +33,32 @@ jobs:
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          fetch-depth: 0
 
-      - name: Configure Git for Large Files
+      - name: Git Config for Large Files
         run: |
           git config --global http.postBuffer 524288000
-          git config --global http.maxRequestBuffer 100M
-          git config --global core.compression 0
-          git config --global pack.windowMemory 256m
-          git config --global pack.packSizeLimit 100m
-          git config --global pack.threads 1
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
 
-      - name: Install aria2 and zip
+      - name: Install Tools
+        run: sudo apt-get update && sudo apt-get install -y aria2 zip unzip curl
+
+      - name: Download Files
         run: |
-          sudo apt-get update
-          sudo apt-get install -y aria2 zip curl bc
+          echo "🚀 Starting Download - No Key Required"
+          mkdir -p downloads tmp
+          cd tmp
 
-      - name: Download files
-        run: |
-          echo "🏷️  Downloader Started - No Activation"
-          echo "========================================"
-
-          URLS="${{ github.event.inputs.urls }}"
-          MODE="${{ github.event.inputs.mode }}"
-          PASS="${{ github.event.inputs.password }}"
-
-          mkdir -p tmp_downloads downloads
-          cd tmp_downloads
-
-          for url in $URLS; do
-            echo "🔽 Downloading: $url"
-            aria2c --max-connection-per-server=16 --min-split-size=1M --split=16 --continue=true "$url" || \
-            curl -L -O "$url"
+          for url in ${{ github.event.inputs.urls }}; do
+            echo "📥 Downloading: $url"
+            aria2c --max-connection-per-server=16 --split=16 --min-split-size=1M --continue=true "$url" || curl -L -O "$url"
           done
 
-          # Move to downloads folder + create README (simplified)
+          mv * ../downloads/ 2>/dev/null || true
           cd ..
-          mv tmp_downloads/* downloads/ 2>/dev/null || true
 
       - name: Commit & Push
         run: |
           git add downloads/ -f
-          git commit -m "⬇️ Downloaded new files [skip ci]" || echo "Nothing new to commit"
+          git commit -m "⬇️ New download [skip ci]" || echo "No changes"
           git push
