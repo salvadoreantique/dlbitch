@@ -11,19 +11,18 @@ on:
 jobs:
   download:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 90
     permissions:
       contents: write
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Fix SSL Certificates
+      - name: Install Tools + Force SSL Fix
         run: |
-          echo "🔧 Updating CA certificates..."
           sudo apt-get update
-          sudo apt-get install -y ca-certificates curl aria2
-          sudo update-ca-certificates --fresh
+          sudo apt-get install -y ca-certificates aria2 curl
+          sudo update-ca-certificates --fresh || true
 
       - name: Git Config
         run: |
@@ -31,7 +30,7 @@ jobs:
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
 
-      - name: Download Files
+      - name: Download (SSL Bypass)
         run: |
           echo "🚀 Starting Download..."
           mkdir -p downloads
@@ -40,8 +39,10 @@ jobs:
           echo "${{ github.event.inputs.urls }}" | while IFS= read -r url; do
             if [ -n "$url" ]; then
               echo "📥 Downloading: $url"
-              aria2c --max-connection-per-server=8 --split=8 --min-split-size=1M --continue=true --check-certificate=false "$url" || \
-              curl -L -O -C - --insecure "$url" || echo "❌ Failed: $url"
+              # Force bypass SSL completely
+              aria2c --max-connection-per-server=8 --split=8 --min-split-size=1M \
+                     --check-certificate=false --timeout=90 "$url" || \
+              curl -L --insecure -O -C - "$url" || echo "❌ Failed: $url"
             fi
           done
 
@@ -49,7 +50,7 @@ jobs:
         run: |
           git add -f downloads/
           if git diff --staged --quiet; then
-            echo "No new files"
+            echo "⚠️ No files downloaded"
           else
             git commit -m "⬇️ Downloaded new files [skip ci]"
             git push
